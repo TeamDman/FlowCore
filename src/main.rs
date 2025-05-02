@@ -1,5 +1,8 @@
-use clap::{CommandFactory, FromArgMatches, Parser};
-use tracing::{debug, info};
+use clap::CommandFactory;
+use clap::FromArgMatches;
+use clap::Parser;
+use tracing::debug;
+use tracing::info;
 
 #[derive(Debug, Parser)]
 pub struct Args {
@@ -24,8 +27,6 @@ fn main() -> eyre::Result<()> {
         .init();
     info!("Hello, world!");
     debug!("Debug mode is {}", args.debug);
-
-    
 
     Ok(())
 }
