@@ -1,5 +1,5 @@
 #[tokio::test]
-pub async fn why_is_the_sky_blue() -> eyre::Result<()> {
+pub async fn sky() -> eyre::Result<()> {
     use std::time::Instant;
     use tracing::info;
     use std::fs::File;
@@ -16,16 +16,17 @@ pub async fn why_is_the_sky_blue() -> eyre::Result<()> {
     let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
     
     // Clean up any existing output files
-    let output_file = test_dir.join("why_is_the_sky_blue_output.md");
+    let output_file = test_dir.join("o_sky_output.md");
     let _ = std::fs::remove_file(&output_file);
     
     let args = summarizer::Args {
         debug: false,
         command: summarizer::Commands::Ollama {
             model: "qwen3:1.7b".to_string(),
-            input: test_dir.join("why_is_the_sky_blue_input.md").to_string_lossy().into_owned(),
-            output: output_file.to_string_lossy().into_owned(),
+            input: test_dir.join("i_sky_input.md"),
+            output: output_file,
         },
+        stream: true,
     };
 
     let result = summarizer::run_program(args).await;
@@ -33,7 +34,7 @@ pub async fn why_is_the_sky_blue() -> eyre::Result<()> {
     info!("Test completed in {:.2?}", duration);
     
     // Write timing information to file
-    let timing_file = test_dir.join("why_is_the_sky_blue_timing.txt");
+    let timing_file = test_dir.join("t_sky_timing.txt");
     let mut file = File::create(timing_file)?;
     writeln!(file, "Test completed in {:.2?}", duration)?;
     

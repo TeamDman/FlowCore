@@ -1,16 +1,24 @@
+#![feature(async_fn_track_caller)]
 use clap::Parser;
 use clap::Subcommand;
+use eyre::Context;
 use ollama_rs::Ollama;
-use ollama_rs::generation::completion::request::GenerationRequest;
+use ollama_rs::generation::chat::ChatMessage;
+use ollama_rs::generation::chat::request::ChatMessageRequest;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::path::PathBuf;
+use tokio_stream::StreamExt;
 use tracing::info;
 
 #[derive(Debug, Parser)]
 pub struct Args {
     #[arg(long, global = true, default_value = "false")]
     pub debug: bool,
+
+    #[arg(long, global = true, default_value = "false")]
+    pub stream: bool,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -26,15 +34,26 @@ pub enum Commands {
 
         /// Input file path
         #[arg(short, long)]
-        input: String,
+        input: PathBuf,
 
         /// Output file path
         #[arg(short, long)]
-        output: String,
+        output: PathBuf,
     },
 }
 
+#[track_caller]
 pub async fn run_program(args: Args) -> eyre::Result<()> {
+    match run_program_inner(args).await {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e.wrap_err(format!(
+            "Failed to run program from {}",
+            std::panic::Location::caller()
+        ))),
+    }
+}
+
+pub async fn run_program_inner(args: Args) -> eyre::Result<()> {
     match args.command {
         Commands::Ollama {
             model,
@@ -43,12 +62,16 @@ pub async fn run_program(args: Args) -> eyre::Result<()> {
         } => {
             // Check if output file already exists
             let output_path = Path::new(&output);
-            if output_path.exists() {
-                return Err(eyre::eyre!("Output file already exists: {}", output));
+            if matches!(tokio::fs::try_exists(output_path).await, Ok(true)) {
+                return Err(eyre::eyre!(
+                    "Output file already exists: {}",
+                    output.display()
+                ));
             }
 
             // Read input file content
-            let input_content = fs::read_to_string(&input)?;
+            let input_content = fs::read_to_string(&input)
+                .wrap_err(format!("Failed to read input file from {:?}", input.display()))?;
 
             // Ensure the output directory exists
             if let Some(parent) = output_path.parent() {
@@ -65,16 +88,24 @@ pub async fn run_program(args: Args) -> eyre::Result<()> {
             let ollama = Ollama::default();
 
             // Create generation request
-            let request = GenerationRequest::new(model, input_content);
+            let messages = vec![ChatMessage::user(input_content)];
+            let request = ChatMessageRequest::new(model, messages);
 
-            // Generate response
-            let response = ollama.generate(request).await?;
+            if args.stream {
+                // Stream the response
+                let mut stream = ollama.send_chat_messages_stream(request).await?;
+                while let Some(Ok(response)) = stream.next().await {
+                    file.write_all(response.message.content.as_bytes())?;
+                    file.flush()?;
+                }
+            } else {
+                // Generate response in one go
+                let response = ollama.send_chat_messages(request).await?;
+                file.write_all(response.message.content.as_bytes())?;
+                file.flush()?;
+            }
 
-            // Write response to file
-            file.write_all(response.response.as_bytes())?;
-            file.flush()?;
-
-            info!("Response written to {}", output);
+            info!("Response written to {}", output.display());
         }
     }
     Ok(())

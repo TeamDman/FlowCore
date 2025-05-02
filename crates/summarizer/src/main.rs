@@ -1,12 +1,5 @@
 use clap::CommandFactory;
 use clap::FromArgMatches;
-use clap::Parser;
-use clap::Subcommand;
-use ollama_rs::Ollama;
-use ollama_rs::generation::completion::request::GenerationRequest;
-use std::fs;
-use std::io::Write;
-use std::path::Path;
 use summarizer::Args;
 use summarizer::run_program;
 use tracing::info;
