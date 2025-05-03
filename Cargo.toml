@@ -29,6 +29,7 @@ directories-next = "2.0.0"
 chrono = "0.4.41"
 holda = "0.1.0"
 cloud_terrastodon_user_input = "0.1.3"
+windows = "0.61.1"
 
 [package]
 name = "flow_core"
