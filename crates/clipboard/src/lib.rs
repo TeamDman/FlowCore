@@ -1,10 +1,14 @@
 pub mod windy_error;
 use eyre::Context;
+use windows::Win32::System::Memory::GlobalLock;
+use windows::Win32::System::Memory::GlobalSize;
+use windows::Win32::System::Memory::GlobalUnlock;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 use windows::Win32::Foundation::*;
 use windows::Win32::System::DataExchange::*;
 use windows::Win32::System::Ole::*;
+use windows::Win32::System::Memory::*;
 use windows::Win32::UI::Shell::*;
 use windy_error::WindyResult;
 
@@ -49,9 +53,40 @@ pub fn describe_clipboard_contents() -> WindyResult<String> {
             format = next_format;
             let format_name = get_clipboard_format_name(format)?;
             description.push_str(&format!(
-                "\nAdditional format: {} (0x{:X})\n",
+                "\nFormat: {} (0x{:X})\n",
                 format_name, format
             ));
+
+            // Try to get the content for this format
+            if let Ok(handle) = GetClipboardData(format) {
+                if !handle.is_invalid() {
+                    let content = match format {
+                        x if x == CF_TEXT.0 as u32 || x == CF_OEMTEXT.0 as u32 => {
+                            let ptr = handle.0 as *const u8;
+                            let mut len = 0;
+                            while *ptr.add(len) != 0 {
+                                len += 1;
+                            }
+                            let slice = std::slice::from_raw_parts(ptr, len);
+                            String::from_utf8_lossy(slice).to_string()
+                        }
+                        x if x == CF_UNICODETEXT.0 as u32 => {
+                            let ptr = handle.0 as *const u16;
+                            let mut len = 0;
+                            while *ptr.add(len) != 0 {
+                                len += 1;
+                            }
+                            let slice = std::slice::from_raw_parts(ptr, len);
+                            OsString::from_wide(slice).to_string_lossy().to_string()
+                        }
+                        _ => {
+                            let size = GlobalSize(HGLOBAL(handle.0));
+                            format!("[Binary data, {} bytes]", size)
+                        }
+                    };
+                    description.push_str(&format!("Content: {}\n", content));
+                }
+            }
         }
 
         CloseClipboard()?;
