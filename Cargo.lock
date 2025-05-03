@@ -374,6 +374,7 @@ dependencies = [
  "color-eyre",
  "eyre",
  "flow_core_describe_picture",
+ "flow_core_global_args",
  "tokio",
  "tracing",
  "tracing-subscriber",

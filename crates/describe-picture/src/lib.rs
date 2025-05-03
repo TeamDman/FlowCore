@@ -6,8 +6,8 @@ use cloud_terrastodon_user_input::Choice;
 use cloud_terrastodon_user_input::FzfArgs;
 use cloud_terrastodon_user_input::pick;
 use config::DescribePictureConfig;
-use eyre::bail;
 use eyre::Context;
+use eyre::bail;
 use flow_core_config::IConfig;
 use flow_core_global_args::GlobalArgs;
 use holda::Holda;
@@ -34,14 +34,124 @@ pub struct Args {
 pub enum Command {
     /// Describe a single image
     Describe(DescribeCommand),
+    /// Manage configuration
+    Config(ConfigCommand),
 }
 impl Command {
     pub async fn handle(self, global: &GlobalArgs) -> eyre::Result<()> {
         match self {
-            Self::Describe(cmd) => cmd.handle(global).await?,
-        };
+            Self::Describe(cmd) => {
+                let results = cmd.handle(global).await?;
+                for (path, description) in results {
+                    println!("{}: {}", path, description.inner);
+                }
+            }
+            Self::Config(cmd) => {
+                cmd.handle(global).await?;
+            }
+        }
         Ok(())
     }
+}
+
+#[derive(Debug, Parser)]
+pub struct ConfigCommand {
+    #[command(subcommand)]
+    pub command: ConfigSubcommand,
+}
+
+#[derive(Debug, Parser)]
+pub enum ConfigSubcommand {
+    /// Show current configuration
+    Show,
+    /// List configuration file paths
+    List,
+    /// Set a configuration value
+    Set(SetCommand),
+    /// Unset a configuration value
+    Unset(UnsetCommand),
+    /// Reset configuration to defaults
+    Reset,
+}
+
+impl ConfigCommand {
+    pub async fn handle(self, global: &GlobalArgs) -> eyre::Result<()> {
+        match self.command {
+            ConfigSubcommand::Show => {
+                let config = DescribePictureConfig::load().await?;
+                println!("{}", serde_json::to_string_pretty(&config)?);
+            }
+            ConfigSubcommand::List => {
+                let path = DescribePictureConfig::config_path();
+                println!("{}", path.display());
+            }
+            ConfigSubcommand::Set(cmd) => {
+                let mut config = DescribePictureConfig::load().await?;
+                cmd.apply(&mut config)?;
+                config.save().await?;
+            }
+            ConfigSubcommand::Unset(cmd) => {
+                let mut config = DescribePictureConfig::load().await?;
+                cmd.apply(&mut config)?;
+                config.save().await?;
+            }
+            ConfigSubcommand::Reset => {
+                if !global.non_interactive {
+                    if !cloud_terrastodon_user_input::are_you_sure(
+                        "Are you sure you want to reset the configuration to defaults?",
+                    )? {
+                        bail!("User did not confirm");
+                    }
+                }
+                let config = DescribePictureConfig::default();
+                config.save().await?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Parser)]
+pub struct SetCommand {
+    /// The configuration key to set
+    #[arg(value_enum)]
+    pub key: ConfigKey,
+    /// The value to set
+    pub value: String,
+}
+
+impl SetCommand {
+    fn apply(&self, config: &mut DescribePictureConfig) -> eyre::Result<()> {
+        match self.key {
+            ConfigKey::PreferredVisionModel => {
+                config.preferred_vision_model = Some(self.value.clone());
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Parser)]
+pub struct UnsetCommand {
+    /// The configuration key to unset
+    #[arg(value_enum)]
+    pub key: ConfigKey,
+}
+
+impl UnsetCommand {
+    fn apply(&self, config: &mut DescribePictureConfig) -> eyre::Result<()> {
+        match self.key {
+            ConfigKey::PreferredVisionModel => {
+                config.preferred_vision_model = None;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, clap::ValueEnum, Clone)]
+pub enum ConfigKey {
+    PreferredVisionModel,
 }
 
 #[derive(Debug, Parser)]
@@ -60,7 +170,10 @@ pub struct DescribeCommand {
 }
 
 impl DescribeCommand {
-    pub async fn handle(self, global: &GlobalArgs) -> eyre::Result<Vec<(ImagePath, ImageDescription)>> {
+    pub async fn handle(
+        self,
+        global: &GlobalArgs,
+    ) -> eyre::Result<Vec<(ImagePath, ImageDescription)>> {
         debug!("Ensuring picture path exists");
         let mut rtn = Vec::new();
         for image_path in self.image_path.iter() {
@@ -137,7 +250,10 @@ pub async fn get_image_model(args: &DescribeCommand, global: &GlobalArgs) -> eyr
     let models = ollama.list_local_models().await?;
     let mut vision_candidates = Vec::new();
     for model in models {
-        let model_info = ollama.show_model_info(model.name.to_owned()).await.wrap_err(format!("Failed to get model info for {}", model.name))?;
+        let model_info = ollama
+            .show_model_info(model.name.to_owned())
+            .await
+            .wrap_err(format!("Failed to get model info for {}", model.name))?;
         if model_info.capabilities.contains(&"vision".to_string()) {
             vision_candidates.push(model);
         }
@@ -180,6 +296,8 @@ impl FromStr for ImagePath {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(ImagePath { inner: PathBuf::from(s) })
+        Ok(ImagePath {
+            inner: PathBuf::from(s),
+        })
     }
 }

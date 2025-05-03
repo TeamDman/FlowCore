@@ -1,13 +1,14 @@
 use clap::CommandFactory;
 use clap::FromArgMatches;
 use clap::Parser;
+use flow_core_global_args::GlobalArgs;
 use tracing::info;
 
 #[derive(Debug, Parser)]
 #[command(name = "fc", bin_name = "fc")]
 pub struct Args {
-    #[arg(long, global = true, default_value = "false")]
-    pub debug: bool,
+    #[command(flatten)]
+    pub global: GlobalArgs,
 
     #[command(subcommand)]
     pub command: Command,
@@ -24,10 +25,10 @@ pub enum Command {
     Image(ImageCommand),
 }
 impl Command {
-    pub async fn handle(self) -> eyre::Result<()> {
+    pub async fn handle(self, global: &GlobalArgs) -> eyre::Result<()> {
         match self {
-            Self::Gui(cmd) => cmd.handle().await?,
-            Self::Image(cmd) => cmd.handle().await?,
+            Self::Gui(cmd) => cmd.handle(global).await?,
+            Self::Image(cmd) => cmd.handle(global).await?,
         };
         Ok(())
     }
@@ -39,7 +40,7 @@ pub struct GuiCommand {
     command: GuiSubcommand,
 }
 impl GuiCommand {
-    pub async fn handle(self) -> eyre::Result<()> {
+    pub async fn handle(self, _global: &GlobalArgs) -> eyre::Result<()> {
         match self.command {
             GuiSubcommand::Start => {
                 info!("Starting GUI application");
@@ -61,9 +62,14 @@ pub struct ImageCommand {
     command: flow_core_describe_picture::Command,
 }
 impl ImageCommand {
-    pub async fn handle(self) -> eyre::Result<()> {
+    pub async fn handle(self, global: &GlobalArgs) -> eyre::Result<()> {
         match self.command {
-            flow_core_describe_picture::Command::Describe(cmd) => cmd.handle().await?,
+            flow_core_describe_picture::Command::Describe(cmd) => {
+                cmd.handle(global).await?;
+            }
+            flow_core_describe_picture::Command::Config(cmd) => {
+                cmd.handle(global).await?;
+            }
         };
         Ok(())
     }
@@ -80,13 +86,13 @@ async fn main() -> eyre::Result<()> {
         .with_line_number(true)
         .with_level(true)
         .with_target(false)
-        .with_max_level(match args.debug {
+        .with_max_level(match args.global.debug {
             true => tracing::level_filters::LevelFilter::DEBUG,
             false => tracing::level_filters::LevelFilter::INFO,
         })
         .init();
 
-    args.command.handle().await?;
+    args.command.handle(&args.global).await?;
 
     Ok(())
 }

@@ -44,4 +44,5 @@ eyre.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 flow_core_describe_picture.workspace = true
+flow_core_global_args.workspace = true
 tokio.workspace = true
