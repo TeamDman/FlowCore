@@ -25,6 +25,8 @@ fn main() -> eyre::Result<()> {
             false => tracing::level_filters::LevelFilter::INFO,
         })
         .init();
+
+    
     info!("Hello, world!");
     debug!("Debug mode is {}", args.debug);
 

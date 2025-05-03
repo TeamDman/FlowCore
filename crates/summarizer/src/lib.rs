@@ -126,8 +126,6 @@ pub async fn run_program_inner(args: Args) -> eyre::Result<()> {
             input,
             outputs,
         } => {
-            let outputs: Vec<PathBuf> = outputs.split(',').map(|s| PathBuf::from(s.trim())).collect();
-
             if models.len() != outputs.len() {
                 return Err(eyre::eyre!(
                     "Number of models ({}) must match number of output paths ({})",
