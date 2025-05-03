@@ -167,6 +167,14 @@ pub struct DescribeCommand {
     /// Optional model name to use
     #[arg(short, long)]
     pub model: Option<String>,
+
+    /// Output descriptions to sidecar files
+    #[arg(long = "output-sidecar-files")]
+    pub output_sidecar_files: Option<bool>,
+
+    /// Output descriptions to stdout
+    #[arg(long = "output-stdout")]
+    pub output_stdout: Option<bool>,
 }
 
 impl DescribeCommand {
@@ -185,9 +193,32 @@ impl DescribeCommand {
         debug!("Identifying model");
         let model = get_image_model(&self, global).await?;
 
+        
+
+        debug!("Determine output options");
+        let output_sidecar_files = if let Some(value) = self.output_sidecar_files {
+            value
+        } else if !global.non_interactive {
+            cloud_terrastodon_user_input::are_you_sure("Would you like to save descriptions to sidecar files?")?
+        } else {
+            false
+        };
+
+        let output_stdout = if let Some(value) = self.output_stdout {
+            value
+        } else if !global.non_interactive {
+            cloud_terrastodon_user_input::are_you_sure("Would you like to output descriptions to stdout?")?
+        } else {
+            true // Default to true in non-interactive mode
+        };
+
+        debug!("Determine prompt");
         let prompt = self
             .prompt
-            .unwrap_or_else(|| "Describe this image".to_string());
+            .unwrap_or_else(|| "Describe this image in imaaculate detail, we should be able to reconstruct the image from your description".to_string());
+
+
+        debug!("Spawn tasks");
         let mut join_set = JoinSet::<eyre::Result<(ImagePath, ImageDescription)>>::new();
         for image_path in self.image_path {
             let prompt = prompt.to_owned();
@@ -208,10 +239,23 @@ impl DescribeCommand {
                 Ok((image_path, response.response.into()))
             });
         }
+
+        debug!("Join tasks");
         while let Some(result) = join_set.join_next().await {
             debug!("Received result, {} remain...", join_set.len());
-            rtn.push(result??);
+            let (image_path, description) = result??;
+            rtn.push((image_path.clone(), description.clone()));
+
+            // Handle outputs as results come in
+            if output_sidecar_files {
+                let sidecar_path = image_path.as_path().with_extension("description.txt");
+                fs::write(sidecar_path, &description.inner)?;
+            }
+            if output_stdout {
+                println!("{:?}: {}", image_path, description.inner);
+            }
         }
+
         Ok(rtn)
     }
 }
@@ -274,6 +318,14 @@ pub async fn get_image_model(args: &DescribeCommand, global: &GlobalArgs) -> eyr
         header: Some("Choose a model".to_string()),
         ..Default::default()
     })?;
+
+    if cloud_terrastodon_user_input::are_you_sure(
+        "Would you like to save this model as your default vision model?",
+    )? {
+        config.preferred_vision_model = Some(chosen.value.name.clone());
+        config.save().await?;
+    }
+
     Ok(chosen.value.name)
 }
 
