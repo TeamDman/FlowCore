@@ -1,16 +1,76 @@
 use clap::CommandFactory;
 use clap::FromArgMatches;
 use clap::Parser;
-use tracing::debug;
 use tracing::info;
 
 #[derive(Debug, Parser)]
+#[command(name = "fc", bin_name = "fc")]
 pub struct Args {
     #[arg(long, global = true, default_value = "false")]
     pub debug: bool,
+
+    #[command(subcommand)]
+    pub command: Command,
 }
 
-fn main() -> eyre::Result<()> {
+#[derive(Debug, Parser)]
+pub enum Command {
+    /// Start the GUI application
+    #[command(name = "gui")]
+    Gui(GuiCommand),
+
+    /// Describe images using AI
+    #[command(name = "image")]
+    Image(ImageCommand),
+}
+impl Command {
+    pub async fn handle(self) -> eyre::Result<()> {
+        match self {
+            Self::Gui(cmd) => cmd.handle().await?,
+            Self::Image(cmd) => cmd.handle().await?,
+        };
+        Ok(())
+    }
+}
+#[derive(Debug, Parser)]
+pub struct GuiCommand {
+    /// Start the GUI application
+    #[command(subcommand)]
+    command: GuiSubcommand,
+}
+impl GuiCommand {
+    pub async fn handle(self) -> eyre::Result<()> {
+        match self.command {
+            GuiSubcommand::Start => {
+                info!("Starting GUI application");
+            }
+        };
+        Ok(())
+    }
+}
+#[derive(Debug, Parser)]
+pub enum GuiSubcommand {
+    /// Start the GUI application
+    Start,
+}
+
+#[derive(Debug, Parser)]
+pub struct ImageCommand {
+    /// Describe images using AI
+    #[command(subcommand)]
+    command: flow_core_describe_picture::Command,
+}
+impl ImageCommand {
+    pub async fn handle(self) -> eyre::Result<()> {
+        match self.command {
+            flow_core_describe_picture::Command::Describe(cmd) => cmd.handle().await?,
+        };
+        Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
     color_eyre::install()?;
     let mut cmd = Args::command();
     cmd = cmd.version(env!("CARGO_PKG_VERSION"));
@@ -26,9 +86,7 @@ fn main() -> eyre::Result<()> {
         })
         .init();
 
-    
-    info!("Hello, world!");
-    debug!("Debug mode is {}", args.debug);
+    args.command.handle().await?;
 
     Ok(())
 }
